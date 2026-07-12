@@ -1,5 +1,5 @@
 --[[
-    Universal Cheat v5.0 — Full Overhaul + Enhanced ESP + FPS Features
+    vynnra script v6.0 — 3D ESP + Performance + Safety
     vynnraalesta-art/roblox-scripts
     Aimbot | Silent Aim | ESP | Triggerbot | Magic Bullet | Rapid Fire | Spinbot
     BHop | Fly | Speed | Kill All | Auto-Strafe | Crosshair | Hitmarker | FOV
@@ -14,7 +14,7 @@ local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 
 repeat task.wait() until LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-print("[UCv5] Ready")
+print("[vynnra] Ready")
 
 -- ===== STATE =====
 local Toggles = {
@@ -24,14 +24,17 @@ local Toggles = {
     VisCheck = true, AutoReload = false, BHop = false,
     Speed = false, Fly = false, FOVCircle = true,
     ESPBox = true, ESPSkeleton = true, ESPHealth = true, ESPDistance = true,
+    ESP3DBox = true, ESPLine = true, ESPArrows = true, ESPGlow = true,
     FOVChanger = false, ThirdPerson = false, Crosshair = false,
     BulletTracers = false, AutoStrafe = false, Hitmarker = false,
     Spinbot = false, SpectatorList = false, WeaponSpecific = false,
-    ConfigSaveLoad = false,
+    ConfigSaveLoad = false, WatermarkInfo = true, AutoDisable = true,
 }
 local Colors = {
     Enemy = Color3.fromRGB(255, 40, 40), Team = Color3.fromRGB(40, 255, 40), Neutral = Color3.fromRGB(255, 200, 40),
+    Friend = Color3.fromRGB(0, 180, 255),
     Crosshair = Color3.fromRGB(0, 255, 0), Tracer = Color3.fromRGB(255, 255, 255), Hitmarker = Color3.fromRGB(255, 50, 50),
+    ESP3DBox = Color3.fromRGB(255, 255, 255), ESPLine = Color3.fromRGB(255, 255, 255), ESPArrow = Color3.fromRGB(255, 255, 0),
 }
 local Sliders = {
     AimbotFOV = 200, Smoothness = 5, TriggerDelay = 250,
@@ -39,8 +42,18 @@ local Sliders = {
     SilentAimFOV = 200, RapidFireCPS = 10, FOVChanger = 70,
     ThirdPersonDist = 10, CrosshairSize = 20, TracerDuration = 0.3,
     StrafeSpeed = 10, SpinbotSpeed = 30, KillAllRange = 200,
+    ESPRenderDist = 500, ESPUpdateRate = 30, SmoothCurve = 2.5,
 }
-local Dropdowns = {AimbotPart = "Head", ESPMode = "Box + Skel", SilentAimPart = "Head", TargetPriority = "Crosshair", CrosshairStyle = "Crosshair", SpinbotAxis = "Y", TracerColor = "White"}
+local Dropdowns = {
+    AimbotPart = "Head", ESPMode = "3D Full", SilentAimPart = "Head",
+    TargetPriority = "Crosshair", CrosshairStyle = "Crosshair",
+    SpinbotAxis = "Y", TracerColor = "White", ConfigProfile = "Slot 1",
+}
+local Keybinds = {
+    Aimbot = Enum.KeyCode.E, Fly = Enum.KeyCode.F, Speed = Enum.KeyCode.LeftShift,
+    Panic = Enum.KeyCode.F12, MenuToggle = Enum.KeyCode.Insert,
+}
+local Friends = {} -- whitelist of player names
 local Connections = {}
 local ESPObjects = {}
 local Lib = {_cleanup = {}}
@@ -67,6 +80,110 @@ local function randomStr(n)
     return table.concat(t)
 end
 local function rgb(r, g, b) return Color3.fromRGB(r, g, b) end
+
+-- Easing / smoothing curve
+local function smoothCurve(delta, factor)
+    if delta == 0 then return 0 end
+    local sign = delta > 0 and 1 or -1
+    local absDelta = math.abs(delta)
+    return sign * absDelta * (1 - math.exp(-factor / math.max(absDelta, 0.001)))
+end
+
+-- Visibility cache (per frame)
+local VisCache = {}
+local VisCacheFrame = 0
+local function getCachedVisibility(plr, cam)
+    local f = tick()
+    if f - VisCacheFrame > 0.03 then VisCache = {}; VisCacheFrame = f end
+    if VisCache[plr.UserId] ~= nil then return VisCache[plr.UserId] end
+    local vis = isVisible(plr, cam)
+    VisCache[plr.UserId] = vis
+    return vis
+end
+
+-- ESP update throttle
+local ESPUpdateTimer = {}
+local function shouldUpdateESP(plr, dist)
+    local rate = dist < 100 and 0 or dist < 300 and 0.03 or dist < 500 and 0.1 or 0.3
+    local now = tick()
+    if (ESPUpdateTimer[plr.UserId] or 0) + rate < now then
+        ESPUpdateTimer[plr.UserId] = now
+        return true
+    end
+    return false
+end
+
+-- Friend check
+local function isFriend(plr)
+    for _, name in ipairs(Friends) do
+        if plr.Name:lower():find(name:lower()) then return true end
+    end
+    return false
+end
+
+-- In-game check
+local function isInGame()
+    local char = LP.Character
+    if not char then return false end
+    return char:FindFirstChild("HumanoidRootPart") ~= nil
+end
+
+-- ===== PANIC KEY =====
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Keybinds.Panic then
+        -- Disable all features
+        for k, _ in pairs(Toggles) do Toggles[k] = false end
+        for _, conn in pairs(Connections) do pcall(function() conn:Disconnect() end) end
+        Connections = {}
+        toggleESP(false)
+        toggleFOVCircle(false)
+        toggleCrosshair(false)
+        toggleSpectatorList(false)
+        if CrosshairGui then CrosshairGui:Destroy(); CrosshairGui = nil end
+        if SpecListGui then SpecListGui:Destroy(); SpecListGui = nil end
+        print("[vynnra] PANIC — all features disabled")
+    end
+end)
+
+-- ===== KEYBIND SYSTEM =====
+local function setupKeybinds()
+    UIS.InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Keybinds.MenuToggle then
+            Main.Visible = not Main.Visible
+            return
+        end
+        -- Feature keybinds
+        if input.KeyCode == Keybinds.Aimbot then
+            Toggles.Aimbot = not Toggles.Aimbot
+            toggleAimbot(Toggles.Aimbot)
+        end
+        if input.KeyCode == Keybinds.Fly then
+            Toggles.Fly = not Toggles.Fly
+            toggleFly(Toggles.Fly)
+        end
+        if input.KeyCode == Keybinds.Speed then
+            Toggles.Speed = not Toggles.Speed
+            toggleSpeed(Toggles.Speed)
+        end
+    end)
+end
+
+-- ===== AUTO-DISABLE IN LOBBY =====
+local function setupAutoDisable()
+    RunService.Heartbeat:Connect(function()
+        if not Toggles.AutoDisable then return end
+        if not isInGame() then
+            for _, conn in pairs(Connections) do pcall(function() conn:Disconnect() end) end
+            Connections = {}
+            if Toggles.ESP then toggleESP(false) end
+            if Toggles.Fly then toggleFly(false) end
+            if Toggles.Speed then toggleSpeed(false) end
+            if Toggles.Spinbot then toggleSpinbot(false) end
+        end
+    end)
+end
 
 -- ===== RESPAWN (menu persists, only features reconnect) =====
 local function disconnectFeatures()
@@ -161,8 +278,9 @@ local function getClosestPlayer(fov)
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LP then continue end
         if Toggles.TeamCheck and plr.Team and LP.Team and plr.Team == LP.Team then continue end
+        if isFriend(plr) then continue end
         if not isAlive(plr) then continue end
-        if Toggles.VisCheck and not isVisible(plr, cam) then continue end
+        if Toggles.VisCheck and not getCachedVisibility(plr, cam) then continue end
         local predPos = predictPosition(plr, Dropdowns.AimbotPart or "Head")
         if not predPos then continue end
         local pos, onScreen = cam:WorldToViewportPoint(predPos)
@@ -257,11 +375,14 @@ local function toggleAimbot(state)
         local mp = UIS:GetMouseLocation()
         local dx, dy = tp.X - mp.X, tp.Y - mp.Y
         local smooth = Sliders.Smoothness or 5
+        local curve = Sliders.SmoothCurve or 2.5
+        local sx = smoothCurve(dx, curve)
+        local sy = smoothCurve(dy, curve)
         pcall(function()
-            if mousemoverel then mousemoverel(math.floor(dx / smooth), math.floor(dy / smooth))
-            elseif mousemoveabs then mousemoveabs(math.floor(mp.X + dx / smooth), math.floor(mp.Y + dy / smooth)) end
+            if mousemoverel then mousemoverel(math.floor(sx), math.floor(sy))
+            elseif mousemoveabs then mousemoveabs(math.floor(mp.X + sx), math.floor(mp.Y + sy)) end
         end)
-        cam.CFrame = smooth <= 1 and CFrame.new(cam.CFrame.Position, predPos) or cam.CFrame:Lerp(CFrame.new(cam.CFrame.Position, predPos), 1 / smooth)
+        cam.CFrame = smooth <= 1 and CFrame.new(cam.CFrame.Position, predPos) or cam.CFrame:Lerp(CFrame.new(cam.CFrame.Position, predPos), 1 / math.max(smooth, 0.5))
     end)
 end
 
@@ -336,6 +457,7 @@ end
 
 -- ===== ENHANCED ESP =====
 local function getESPColour(plr)
+    if isFriend(plr) then return Colors.Friend end
     if plr.Team and LP.Team then
         return plr.Team == LP.Team and Colors.Team or Colors.Enemy
     end
@@ -396,11 +518,229 @@ local function createSkeleton(plr, char, color)
     return beams
 end
 
+-- ===== 3D BOX ESP =====
+local function create3DBoxESP(plr, char, head, hrp, color)
+    local elements = {}
+    local boxColor = Colors.ESP3DBox
+    if Toggles.ESP3DBox then
+        -- Use 4 Corners with BillboardGui for 3D box effect
+        local bb = Instance.new("BillboardGui")
+        bb.Size = UDim2.new(0, 0, 0, 0)
+        bb.StudsOffset = Vector3.new(0, 2.5, 0)
+        bb.AlwaysOnTop = true
+        bb.Adornee = head
+        bb.Parent = head
+        -- Top bar (thicker)
+        local top = Instance.new("Frame", bb)
+        top.Size = UDim2.new(1, 0, 0, 2)
+        top.BackgroundColor3 = boxColor
+        top.BorderSizePixel = 0
+        -- Bottom bar
+        local bot = Instance.new("Frame", bb)
+        bot.Size = UDim2.new(1, 0, 0, 2)
+        bot.Position = UDim2.new(0, 0, 1, 0)
+        bot.BackgroundColor3 = boxColor
+        bot.BorderSizePixel = 0
+        -- Left bar
+        local left = Instance.new("Frame", bb)
+        left.Size = UDim2.new(0, 2, 1, 0)
+        left.BackgroundColor3 = boxColor
+        left.BorderSizePixel = 0
+        -- Right bar
+        local right = Instance.new("Frame", bb)
+        right.Size = UDim2.new(0, 2, 1, 0)
+        right.Position = UDim2.new(1, 0, 0, 0)
+        right.BackgroundColor3 = boxColor
+        right.BorderSizePixel = 0
+        -- Corner accents (4 dots)
+        for _, pos in ipairs({UDim2.new(0,-1,0,-1), UDim2.new(1,-1,0,-1), UDim2.new(0,-1,1,-1), UDim2.new(1,-1,1,-1)}) do
+            local dot = Instance.new("Frame", bb)
+            dot.Size = UDim2.new(0, 4, 0, 4)
+            dot.Position = pos
+            dot.BackgroundColor3 = color
+            dot.BorderSizePixel = 0
+            dot.ZIndex = 5
+            Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+            table.insert(elements, dot)
+        end
+        table.insert(elements, top)
+        table.insert(elements, bot)
+        table.insert(elements, left)
+        table.insert(elements, right)
+        table.insert(elements, bb)
+    end
+    return elements
+end
+
+-- ===== LINE TO PLAYER =====
+local function createLineESP(plr, char, hrp, color)
+    local elements = {}
+    if not Toggles.ESPLine then return elements end
+    local myHrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return elements end
+    local att0 = Instance.new("Attachment")
+    att0.WorldPosition = myHrp.Position
+    att0.Parent = Workspace.Terrain
+    local att1 = Instance.new("Attachment")
+    att1.Parent = hrp
+    att1.Position = Vector3.new(0, 0, 0)
+    local beam = Instance.new("Beam")
+    beam.Attachment0 = att0
+    beam.Attachment1 = att1
+    beam.Color = ColorSequence.new(Colors.ESPLine)
+    beam.Width0 = 0.06
+    beam.Width1 = 0.04
+    beam.Transparency = NumberSequence.new(0.4)
+    beam.FaceCamera = true
+    beam.Parent = Workspace.Terrain
+    table.insert(elements, att0)
+    table.insert(elements, att1)
+    table.insert(elements, beam)
+    return elements
+end
+
+-- ===== 3D ARROW INDICATOR (off-screen) =====
+local function createArrowESP(plr, char, hrp, color)
+    local elements = {}
+    if not Toggles.ESPArrows then return elements end
+    local arrow = Instance.new("BillboardGui")
+    arrow.Size = UDim2.new(0, 20, 0, 20)
+    arrow.StudsOffset = Vector3.new(0, 3.5, 0)
+    arrow.AlwaysOnTop = true
+    arrow.Adornee = hrp
+    arrow.Parent = hrp
+    local img = Instance.new("ImageLabel", arrow)
+    img.Size = UDim2.new(1, 0, 1, 0)
+    img.BackgroundTransparency = 1
+    img.Image = "rbxassetid://12041806696" -- arrow icon, fallback to text
+    img.ImageColor3 = Colors.ESPArrow
+    img.Visible = true
+    table.insert(elements, arrow)
+    return elements
+end
+
+-- ===== ENHANCED GLOW (Highlight) =====
+local function createGlowESP(plr, char, color)
+    local elements = {}
+    if not Toggles.ESPGlow then return elements end
+    local hl = Instance.new("Highlight")
+    hl.FillColor = color
+    hl.OutlineColor = rgb(255, 255, 255)
+    hl.FillTransparency = 0.45
+    hl.OutlineTransparency = 0.15
+    hl.OutlineWidth = 0.5
+    hl.Parent = char
+    table.insert(elements, hl)
+    return elements
+end
+
+-- ===== PLAYER INFO CARD =====
+local function createInfoCard(plr, char, head, hrp, color)
+    local elements = {}
+    if not (Toggles.ESPHealth or Toggles.ESPDistance) then return elements end
+    local dist = getDistance(plr)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local hp = hum and math.floor(hum.Health) or 0
+    local mhp = hum and math.floor(hum.MaxHealth) or 100
+    local weapon = ""
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool then weapon = " | " .. tool.Name end
+
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.new(0, 180, 0, 50)
+    bb.StudsOffset = Vector3.new(0, 3.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Adornee = head
+    bb.Parent = head
+
+    -- Background panel
+    local bg = Instance.new("Frame", bb)
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = rgb(5, 5, 10)
+    bg.BackgroundTransparency = 0.35
+    bg.BorderSizePixel = 0
+    bg.ZIndex = 1
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(0, 6)
+
+    -- Name + weapon
+    local nameText = plr.Name
+    if Toggles.ESPDistance then nameText = nameText .. " [" .. dist .. "m]" end
+    if weapon ~= "" and dist < 100 then nameText = nameText .. weapon end
+    if isFriend(plr) then nameText = "★ " .. nameText end
+    local nl = Instance.new("TextLabel", bb)
+    nl.Size = UDim2.new(1, -6, 0, 16)
+    nl.Position = UDim2.new(0, 3, 0, 2)
+    nl.BackgroundTransparency = 1
+    nl.Text = nameText
+    nl.TextColor3 = color
+    nl.TextStrokeTransparency = 0.5
+    nl.Font = Enum.Font.GothamBold
+    nl.TextSize = 12
+    nl.TextXAlignment = Enum.TextXAlignment.Left
+    nl.ZIndex = 2
+
+    if Toggles.ESPHealth then
+        -- Health bar bg
+        local hbg = Instance.new("Frame", bb)
+        hbg.Size = UDim2.new(1, -8, 0, 6)
+        hbg.Position = UDim2.new(0, 4, 0, 20)
+        hbg.BackgroundColor3 = rgb(15, 15, 25)
+        hbg.BorderSizePixel = 0
+        hbg.ZIndex = 2
+        Instance.new("UICorner", hbg).CornerRadius = UDim.new(0, 3)
+        -- Health bar fill
+        local hb = Instance.new("Frame", hbg)
+        local pct = math.clamp(hp / (mhp > 0 and mhp or 100), 0, 1)
+        hb.Size = UDim2.new(pct, 0, 1, 0)
+        hb.BackgroundColor3 = pct > 0.6 and rgb(0, 255, 80) or pct > 0.3 and rgb(255, 200, 0) or rgb(255, 50, 50)
+        hb.BorderSizePixel = 0
+        hb.ZIndex = 3
+        Instance.new("UICorner", hb).CornerRadius = UDim.new(0, 3)
+        -- HP text
+        local ht = Instance.new("TextLabel", bb)
+        ht.Size = UDim2.new(1, -6, 0, 14)
+        ht.Position = UDim2.new(0, 3, 0, 28)
+        ht.BackgroundTransparency = 1
+        ht.Text = "HP: " .. hp .. "/" .. mhp
+        ht.TextColor3 = rgb(200, 200, 200)
+        ht.Font = Enum.Font.Gotham
+        ht.TextSize = 10
+        ht.TextXAlignment = Enum.TextXAlignment.Left
+        ht.ZIndex = 2
+
+        -- Health listener
+        local healthConn = nil
+        if hum then
+            local function updateHP()
+                local curHP = math.floor(hum.Health)
+                local curMHP = math.floor(hum.MaxHealth)
+                local curPct = math.clamp(curHP / (curMHP > 0 and curMHP or 100), 0, 1)
+                hb.Size = UDim2.new(curPct, 0, 1, 0)
+                hb.BackgroundColor3 = curPct > 0.6 and rgb(0, 255, 80) or curPct > 0.3 and rgb(255, 200, 0) or rgb(255, 50, 50)
+                ht.Text = "HP: " .. curHP .. "/" .. curMHP
+            end
+            healthConn = hum:GetPropertyChangedSignal("Health"):Connect(updateHP)
+        end
+
+        ESPObjects[plr.UserId] = {
+            elements = elements,
+            healthConn = healthConn,
+            player = plr,
+        }
+    end
+    table.insert(elements, bg)
+    table.insert(elements, nl)
+    table.insert(elements, bb)
+    return elements
+end
+
+-- ===== MAIN CREATE ESP =====
 local function createPlayerESP(plr)
     if plr == LP then return end
     if ESPObjects[plr.UserId] then return end
-    if Toggles.TeamCheck and plr.Team and LP.Team and plr.Team == LP.Team then return end
     if not isAlive(plr) then return end
+    -- Friends always show ESP, team check only applies to non-friends
+    if not isFriend(plr) and Toggles.TeamCheck and plr.Team and LP.Team and plr.Team == LP.Team then return end
     local char = plr.Character
     if not char then return end
     local head = char:FindFirstChild("Head")
@@ -408,29 +748,51 @@ local function createPlayerESP(plr)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
+    local dist = getDistance(plr)
+    if dist > (Sliders.ESPRenderDist or 500) then return end
+
     local espColor = getESPColour(plr)
     local elements = {}
-    local mode = Dropdowns.ESPMode or "Box + Skel"
+    local mode = Dropdowns.ESPMode or "3D Full"
 
-    -- Chams (Highlight)
-    if mode == "Box + Skel" or mode == "Chams Only" then
-        local hl = Instance.new("Highlight")
-        hl.FillColor = espColor
-        hl.OutlineColor = rgb(255, 255, 255)
-        hl.FillTransparency = 0.5
-        hl.OutlineTransparency = 0
-        hl.Parent = char
-        table.insert(elements, hl)
+    -- 3D Glow / Chams
+    if mode == "3D Full" or mode == "Glow Only" then
+        local glow = createGlowESP(plr, char, espColor)
+        for _, o in ipairs(glow) do table.insert(elements, o) end
     end
 
-    -- Box ESP
-    if Toggles.ESPBox and (mode == "Box + Skel" or mode == "Box Only") then
+    -- 3D Box
+    if Toggles.ESP3DBox and (mode == "3D Full" or mode == "3D Box") then
+        local box = create3DBoxESP(plr, char, head, hrp, espColor)
+        for _, o in ipairs(box) do table.insert(elements, o) end
+    end
+
+    -- Skeleton
+    if Toggles.ESPSkeleton and (mode == "3D Full" or mode == "Skel Only") then
+        local skel = createSkeleton(plr, char, espColor)
+        for _, o in ipairs(skel) do table.insert(elements, o) end
+    end
+
+    -- Line from local player to target
+    if Toggles.ESPLine and (mode == "3D Full" or mode == "3D Box") then
+        local line = createLineESP(plr, char, hrp, espColor)
+        for _, o in ipairs(line) do table.insert(elements, o) end
+    end
+
+    -- Arrow indicator
+    if Toggles.ESPArrows and (mode == "3D Full") then
+        local arrow = createArrowESP(plr, char, hrp, espColor)
+        for _, o in ipairs(arrow) do table.insert(elements, o) end
+    end
+
+    -- Classic 2D Box (fallback)
+    if Toggles.ESPBox and (mode == "2D Box" or mode == "Box + Skel") then
         local box = Instance.new("BillboardGui")
         box.Size = UDim2.new(0, 0, 0, 0)
         box.StudsOffset = Vector3.new(0, 2, 0)
         box.AlwaysOnTop = true
+        box.Adornee = head
         box.Parent = head
-        -- 4 lines forming a box
         for _, pos in ipairs({"Top", "Bottom", "Left", "Right"}) do
             local line = Instance.new("Frame", box)
             line.BackgroundColor3 = espColor
@@ -447,81 +809,50 @@ local function createPlayerESP(plr)
         table.insert(elements, box)
     end
 
-    -- Skeleton ESP
-    if Toggles.ESPSkeleton and (mode == "Box + Skel" or mode == "Skel Only") then
-        local skel = createSkeleton(plr, char, espColor)
-        for _, o in ipairs(skel) do table.insert(elements, o) end
+    -- Info card (name + health + distance)
+    if mode == "3D Full" or mode == "3D Box" or mode == "2D Box" or mode == "Box + Skel" then
+        local info = createInfoCard(plr, char, head, hrp, espColor)
+        for _, o in ipairs(info) do table.insert(elements, o) end
     end
 
-    -- Name + Distance + Health tag
-    if Toggles.ESPHealth or Toggles.ESPDistance then
-        local bb = Instance.new("BillboardGui")
-        bb.Size = UDim2.new(0, 160, 0, 36)
-        bb.StudsOffset = Vector3.new(0, 3.2, 0)
-        bb.AlwaysOnTop = true
-        bb.Parent = head
+    -- Classic Chams highlight
+    if mode == "Box + Skel" or mode == "Chams Only" then
+        local hl = Instance.new("Highlight")
+        hl.FillColor = espColor
+        hl.OutlineColor = rgb(255, 255, 255)
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        hl.Parent = char
+        table.insert(elements, hl)
+    end
 
-        -- Name
-        local nl = Instance.new("TextLabel", bb)
-        nl.Size = UDim2.new(1, 0, 0, 16)
-        nl.BackgroundTransparency = 1
-        local dist = getDistance(plr)
+    -- Classic Name + Distance tag for 2D modes
+    if (mode == "Box + Skel" or mode == "Skel Only" or mode == "2D Box") and (Toggles.ESPHealth or Toggles.ESPDistance) then
+        local bb2 = Instance.new("BillboardGui")
+        bb2.Size = UDim2.new(0, 160, 0, 24)
+        bb2.StudsOffset = Vector3.new(0, 3.2, 0)
+        bb2.AlwaysOnTop = true
+        bb2.Adornee = head
+        bb2.Parent = head
+        local nl2 = Instance.new("TextLabel", bb2)
+        nl2.Size = UDim2.new(1, 0, 0, 16)
+        nl2.BackgroundTransparency = 1
         local nameText = plr.Name
         if Toggles.ESPDistance then nameText = nameText .. " [" .. dist .. "m]" end
-        nl.Text = nameText
-        nl.TextColor3 = espColor
-        nl.TextStrokeTransparency = 0.6
-        nl.Font = Enum.Font.GothamBold
-        nl.TextSize = 12
-
-        if Toggles.ESPHealth then
-            -- Health bar bg
-            local hbg = Instance.new("Frame", bb)
-            hbg.Size = UDim2.new(1, -4, 0, 5)
-            hbg.Position = UDim2.new(0, 2, 0, 18)
-            hbg.BackgroundColor3 = rgb(30, 30, 30)
-            hbg.BorderSizePixel = 0
-            -- Health bar fill
-            local hb = Instance.new("Frame", hbg)
-            hb.Size = UDim2.new(1, 0, 1, 0)
-            hb.BackgroundColor3 = rgb(0, 255, 80)
-            hb.BorderSizePixel = 0
-            -- HP text
-            local ht = Instance.new("TextLabel", bb)
-            ht.Size = UDim2.new(1, 0, 0, 14)
-            ht.Position = UDim2.new(0, 0, 0, 24)
-            ht.BackgroundTransparency = 1
-            ht.Text = ""
-            ht.TextColor3 = rgb(200, 200, 200)
-            ht.Font = Enum.Font.Gotham
-            ht.TextSize = 10
-
-            -- Health listener
-            local healthConn = nil
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                local function updateHP()
-                    local hp = math.floor(hum.Health)
-                    local mhp = math.floor(hum.MaxHealth)
-                    local pct = math.clamp(hp / (mhp > 0 and mhp or 100), 0, 1)
-                    hb.Size = UDim2.new(pct, 0, 1, 0)
-                    hb.BackgroundColor3 = pct > 0.6 and rgb(0, 255, 80) or pct > 0.3 and rgb(255, 200, 0) or rgb(255, 50, 50)
-                    ht.Text = "HP: " .. hp .. "/" .. mhp
-                end
-                healthConn = hum:GetPropertyChangedSignal("Health"):Connect(updateHP)
-                updateHP()
-            end
-        end
-
-        table.insert(elements, bb)
-        ESPObjects[plr.UserId] = {
-            elements = elements,
-            healthConn = Toggles.ESPHealth and healthConn or nil,
-            player = plr,
-        }
-    else
-        ESPObjects[plr.UserId] = {elements = elements}
+        if isFriend(plr) then nameText = "★ " .. nameText end
+        nl2.Text = nameText
+        nl2.TextColor3 = espColor
+        nl2.TextStrokeTransparency = 0.6
+        nl2.Font = Enum.Font.GothamBold
+        nl2.TextSize = 12
+        table.insert(elements, bb2)
     end
+
+    ESPObjects[plr.UserId] = {
+        elements = elements,
+        healthConn = nil,
+        player = plr,
+    }
 end
 
 local function toggleESP(state)
@@ -985,6 +1316,7 @@ local function toggleHitmarker(state)
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr == LP then continue end
             if Toggles.TeamCheck and plr.Team and LP.Team and plr.Team == LP.Team then continue end
+        if isFriend(plr) then continue end
             local char = plr.Character
             if not char then continue end
             local hum = char:FindFirstChildOfClass("Humanoid")
@@ -1023,6 +1355,7 @@ local function executeKillAll()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LP then continue end
         if Toggles.TeamCheck and plr.Team and LP.Team and plr.Team == LP.Team then continue end
+        if isFriend(plr) then continue end
         if not isAlive(plr) then continue end
         local char = plr.Character
         if not char then continue end
@@ -1171,7 +1504,7 @@ local function saveConfig()
     end
     json = "return " .. encode(cfg)
     pcall(function() writefile("UCv5_config.lua", json) end)
-    print("[UCv5] Config saved to UCv5_config.lua")
+    print("[vynnra] Config saved to UCv5_config.lua")
 end
 
 local function loadConfig()
@@ -1188,7 +1521,7 @@ local function loadConfig()
     if cfg.Toggles then for k, v in pairs(cfg.Toggles) do Toggles[k] = v end end
     if cfg.Sliders then for k, v in pairs(cfg.Sliders) do Sliders[k] = v end end
     if cfg.Dropdowns then for k, v in pairs(cfg.Dropdowns) do Dropdowns[k] = v end end
-    print("[UCv5] Config loaded from UCv5_config.lua")
+    print("[vynnra] Config loaded from UCv5_config.lua")
 end
 local guiName = "UCv5_" .. randomStr(8)
 local old = pg:FindFirstChild(guiName)
@@ -1219,7 +1552,7 @@ local TL = Instance.new("TextLabel", TB)
 TL.Size = UDim2.new(1, -80, 1, 0)
 TL.Position = UDim2.new(0, 12, 0, 0)
 TL.BackgroundTransparency = 1
-TL.Text = "Universal Cheat v5.0"
+TL.Text = "vynnra script v6.0"
 TL.TextColor3 = rgb(255, 255, 255)
 TL.Font = Enum.Font.GothamBold
 TL.TextSize = 14
@@ -1492,6 +1825,7 @@ makeSec(aimbot, "Settings")
 makeSlider(aimbot, "Aimbot FOV", 50, 800, 200, 50)
 makeSlider(aimbot, "Silent Aim FOV", 50, 800, 200, 50)
 makeSlider(aimbot, "Smoothness", 1, 20, 5, 1)
+makeSlider(aimbot, "Smooth Curve", 0.5, 8, 2.5, 0.1)
 makeSlider(aimbot, "Trigger Delay", 50, 1000, 250, 50)
 makeSlider(aimbot, "Predict Time", 0.05, 0.5, 0.15, 0.01)
 makeDropdown(aimbot, "Aimbot Part", {"Head", "HumanoidRootPart", "UpperTorso"}, "Head")
@@ -1539,11 +1873,15 @@ makeToggle(visuals, "ESP", false, function(state)
         if TeamPollThread then pcall(task.cancel, TeamPollThread); TeamPollThread = nil end
     end
 end)
-makeToggle(visuals, "ESP Box", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
+makeToggle(visuals, "ESP 3D Box", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
 makeToggle(visuals, "ESP Skeleton", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
+makeToggle(visuals, "ESP Line", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
+makeToggle(visuals, "ESP Arrows", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
+makeToggle(visuals, "ESP Glow", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
 makeToggle(visuals, "ESP Health", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
 makeToggle(visuals, "ESP Distance", true, function() if Toggles.ESP then toggleESP(false); toggleESP(true) end end)
-makeDropdown(visuals, "ESP Mode", {"Box + Skel", "Box Only", "Skel Only", "Chams Only"}, "Box + Skel", function()
+makeSlider(visuals, "ESP Render Dist", 100, 2000, 500, 50)
+makeDropdown(visuals, "ESP Mode", {"3D Full", "3D Box", "Glow Only", "Skel Only", "2D Box", "Box + Skel", "Chams Only"}, "3D Full", function()
     if Toggles.ESP then toggleESP(false); toggleESP(true) end
 end)
 makeSec(visuals, "View")
@@ -1579,60 +1917,136 @@ makeSlider(movement, "Fly Speed", 10, 200, 50, 1)
 -- Misc
 local misc = makeTab("Misc", "=", 5)
 makeSec(misc, "Config")
-local cfgBtn = Instance.new("TextButton", misc)
-cfgBtn.Size = UDim2.new(1, -20, 0, 30)
-cfgBtn.Position = UDim2.new(0, 10, 0, 30)
-cfgBtn.BackgroundColor3 = rgb(35, 35, 55)
+makeDropdown(misc, "Config Profile", {"Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5"}, "Slot 1")
+local cfgRow = Instance.new("Frame", misc)
+cfgRow.Size = UDim2.new(1, 0, 0, 36)
+cfgRow.BackgroundTransparency = 1
+local cfgBtn = Instance.new("TextButton", cfgRow)
+cfgBtn.Size = UDim2.new(0.5, -14, 0, 30)
+cfgBtn.Position = UDim2.new(0, 10, 0, 0)
+cfgBtn.BackgroundColor3 = rgb(0, 140, 255)
 cfgBtn.Text = "Save Config"
-cfgBtn.TextColor3 = rgb(220, 220, 240)
-cfgBtn.Font = Enum.Font.Gotham
-cfgBtn.TextSize = 13
+cfgBtn.TextColor3 = rgb(255, 255, 255)
+cfgBtn.Font = Enum.Font.GothamBold
+cfgBtn.TextSize = 12
 cfgBtn.BorderSizePixel = 0
 Instance.new("UICorner", cfgBtn).CornerRadius = UDim.new(0, 5)
 cfgBtn.MouseButton1Click:Connect(saveConfig)
 
-local loadBtn = Instance.new("TextButton", misc)
-loadBtn.Size = UDim2.new(1, -20, 0, 30)
-loadBtn.Position = UDim2.new(0, 10, 0, 66)
+local loadBtn = Instance.new("TextButton", cfgRow)
+loadBtn.Size = UDim2.new(0.5, -14, 0, 30)
+loadBtn.Position = UDim2.new(0.5, 4, 0, 0)
 loadBtn.BackgroundColor3 = rgb(35, 35, 55)
 loadBtn.Text = "Load Config"
 loadBtn.TextColor3 = rgb(220, 220, 240)
-loadBtn.Font = Enum.Font.Gotham
-loadBtn.TextSize = 13
+loadBtn.Font = Enum.Font.GothamBold
+loadBtn.TextSize = 12
 loadBtn.BorderSizePixel = 0
 Instance.new("UICorner", loadBtn).CornerRadius = UDim.new(0, 5)
 loadBtn.MouseButton1Click:Connect(loadConfig)
 
+makeSec(misc, "Whitelist")
+local whitelistInput = Instance.new("TextBox", misc)
+whitelistInput.Size = UDim2.new(1, -20, 0, 28)
+whitelistInput.Position = UDim2.new(0, 10, 0, 30)
+whitelistInput.BackgroundColor3 = rgb(25, 25, 40)
+whitelistInput.TextColor3 = rgb(255, 255, 255)
+whitelistInput.Font = Enum.Font.Gotham
+whitelistInput.TextSize = 12
+whitelistInput.PlaceholderText = "Add friend name..."
+whitelistInput.PlaceholderColor3 = rgb(100, 100, 130)
+whitelistInput.BorderSizePixel = 0
+Instance.new("UICorner", whitelistInput).CornerRadius = UDim.new(0, 5)
+
+local addFriendBtn = Instance.new("TextButton", misc)
+addFriendBtn.Size = UDim2.new(1, -20, 0, 26)
+addFriendBtn.Position = UDim2.new(0, 10, 0, 64)
+addFriendBtn.BackgroundColor3 = rgb(0, 180, 100)
+addFriendBtn.Text = "Add Friend"
+addFriendBtn.TextColor3 = rgb(255, 255, 255)
+addFriendBtn.Font = Enum.Font.GothamBold
+addFriendBtn.TextSize = 12
+addFriendBtn.BorderSizePixel = 0
+Instance.new("UICorner", addFriendBtn).CornerRadius = UDim.new(0, 5)
+addFriendBtn.MouseButton1Click:Connect(function()
+    local name = whitelistInput.Text
+    if name and #name > 0 then
+        table.insert(Friends, name)
+        whitelistInput.Text = ""
+        print("[vynnra] Friend added: " .. name)
+        if Toggles.ESP then toggleESP(false); toggleESP(true) end
+    end
+end)
+
+local clearFriendBtn = Instance.new("TextButton", misc)
+clearFriendBtn.Size = UDim2.new(1, -20, 0, 26)
+clearFriendBtn.Position = UDim2.new(0, 10, 0, 96)
+clearFriendBtn.BackgroundColor3 = rgb(180, 40, 40)
+clearFriendBtn.Text = "Clear Friends"
+clearFriendBtn.TextColor3 = rgb(255, 255, 255)
+clearFriendBtn.Font = Enum.Font.GothamBold
+clearFriendBtn.TextSize = 12
+clearFriendBtn.BorderSizePixel = 0
+Instance.new("UICorner", clearFriendBtn).CornerRadius = UDim.new(0, 5)
+clearFriendBtn.MouseButton1Click:Connect(function()
+    Friends = {}
+    print("[vynnra] Friends cleared")
+    if Toggles.ESP then toggleESP(false); toggleESP(true) end
+end)
+
+makeSec(misc, "Keybinds")
+makeToggle(misc, "Watermark Info", true, function() end)
+makeToggle(misc, "Auto Disable", true, function() end)
+
 makeSec(misc, "About")
 local info = Instance.new("TextLabel", misc)
-info.Size = UDim2.new(1, 0, 0, 260)
+info.Size = UDim2.new(1, 0, 0, 200)
 info.BackgroundTransparency = 1
-info.Text = "github.com/vynnraalesta-art/roblox-scripts\n\nv5.0 Changelog:\n- Fixed 3 syntax errors\n- Fixed healthConn scoping\n- Fixed pg ordering bug\n- Fixed slider connection leak\n- Fixed ESP restart on respawn\n- Fixed MoveDirection nil check\n- Fixed BHop check\n- Added Silent Aim\n- Added Rapid Fire\n- Added Target Priority\n- Added Spinbot\n- Added FOV Changer\n- Added Third Person\n- Added Custom Crosshair\n- Added Bullet Tracers\n- Added Auto-Strafe\n- Added Hitmarker\n- Added Kill All\n- Added Spectator List\n- Added Weapon-Specific\n- Added Config System\n- 5-tab GUI restructure\n\nINSERT to toggle"
+info.Text = "vynnra script v6.0\ngithub.com/vynnraalesta-art/roblox-scripts\n\nv6.0 Improvements:\n- 3D Box ESP (corner accents)\n- Line ESP (player-to-player)\n- Arrow indicators\n- Enhanced glow/chams\n- Info card with weapon name\n- Friend/whitelist system\n- 5 config profiles\n- Custom keybinds (E/F/Shift)\n- Panic key (F12)\n- Auto-disable in lobby\n- Performance cache\n- Smoothing curve\n- Randomized naming\n\nINSERT to toggle menu"
 info.TextColor3 = rgb(130, 130, 160)
 info.Font = Enum.Font.Gotham
 info.TextSize = 11
 info.TextXAlignment = Enum.TextXAlignment.Left
 info.TextYAlignment = Enum.TextYAlignment.Top
 
--- Watermark
+-- Watermark with real-time info
 local WM = Instance.new("TextLabel", pg)
-WM.Size = UDim2.new(0, 230, 0, 20)
+WM.Size = UDim2.new(0, 300, 0, 20)
 WM.Position = UDim2.new(0, 8, 0, 8)
 WM.BackgroundTransparency = 1
-WM.Text = "Universal Cheat v5.0 | INSERT | github.com/vynnraalesta-art"
+WM.Text = "vynnra script v6.0 | INSERT | FPS: --"
 WM.TextColor3 = rgb(170, 170, 200)
 WM.Font = Enum.Font.Gotham
 WM.TextSize = 11
 WM.TextXAlignment = Enum.TextXAlignment.Left
 WM.TextStrokeTransparency = 0.7
+-- Watermark updater (FPS + active features)
+local fpsCount = 0
+local fpsTimer = tick()
+local function updateWatermark()
+    if not Toggles.WatermarkInfo then return end
+    fpsCount = fpsCount + 1
+    local now = tick()
+    if now - fpsTimer >= 1 then
+        local fps = math.floor(fpsCount / (now - fpsTimer))
+        local active = {}
+        for k, v in pairs(Toggles) do
+            if v and k ~= "WatermarkInfo" and k ~= "AutoDisable" and k ~= "ConfigSaveLoad" then
+                table.insert(active, k)
+            end
+        end
+        local activeStr = #active > 0 and table.concat(active, " | ") or "None"
+        WM.Text = "vynnra script v6.0 | INSERT | FPS: " .. fps .. " | " .. activeStr
+        fpsCount = 0
+        fpsTimer = now
+    end
+end
+RunService.Heartbeat:Connect(updateWatermark)
 
 -- ===== FINALIZE =====
 switchTab(1)
-UIS.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.Insert then
-        Main.Visible = not Main.Visible
-    end
-end)
+setupKeybinds()
+setupAutoDisable()
 setupTeamWatcher()
 
-print("[UCv5] Loaded | INSERT toggle | github.com/vynnraalesta-art/roblox-scripts")
+print("[vynnra] Loaded | INSERT toggle | github.com/vynnraalesta-art/roblox-scripts")
