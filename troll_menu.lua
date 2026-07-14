@@ -888,183 +888,177 @@ local function createWindow(title)
     ScreenGui.Parent = pg
     
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 580, 0, 420)
-    Main.Position = UDim2.new(0.5, -290, 0.5, -210)
-    Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    Main.BorderSizePixel = 0
-    Main.Active = true
-    Main.Draggable = true
-    Main.Parent = ScreenGui
+        Main.Size = UDim2.new(0, 620, 0, 460)
+        Main.Position = UDim2.new(0.5, -310, 0.5, -230)
+        Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+        Main.BorderSizePixel = 0
+        Main.Active = true
+        Main.Draggable = true
+        Main.Parent = ScreenGui
+        Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
     
-    local UICorner = Instance.new("UICorner", Main)
-    UICorner.CornerRadius = UDim.new(0, 8)
+        -- Title bar
+        local TitleBar = Instance.new("Frame", Main)
+        TitleBar.Size = UDim2.new(1, 0, 0, 32)
+        TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        TitleBar.BorderSizePixel = 0
+        Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
     
-    -- Title bar
-    local TitleBar = Instance.new("Frame", Main)
-    TitleBar.Size = UDim2.new(1, 0, 0, 35)
-    TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-    TitleBar.BorderSizePixel = 0
+        local TitleLabel = Instance.new("TextLabel", TitleBar)
+        TitleLabel.Size = UDim2.new(1, -35, 1, 0)
+        TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = title
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.Font = Enum.Font.GothamBold
+        TitleLabel.TextSize = 14
+        TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     
-    local TitleCorner = Instance.new("UICorner", TitleBar)
-    TitleCorner.CornerRadius = UDim.new(0, 8)
+        local CloseBtn = Instance.new("TextButton", TitleBar)
+        CloseBtn.Size = UDim2.new(0, 26, 0, 26)
+        CloseBtn.Position = UDim2.new(1, -30, 0.5, -13)
+        CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        CloseBtn.Text = "X"
+        CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        CloseBtn.Font = Enum.Font.GothamBold
+        CloseBtn.TextSize = 12
+        CloseBtn.BorderSizePixel = 0
+        Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 4)
     
-    local TitleLabel = Instance.new("TextLabel", TitleBar)
-    TitleLabel.Size = UDim2.new(1, -40, 1, 0)
-    TitleLabel.Position = UDim2.new(0, 10, 0, 0)
-    TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = title
-    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    TitleLabel.Font = Enum.Font.GothamBold
-    TitleLabel.TextSize = 16
-    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local CloseBtn = Instance.new("TextButton", TitleBar)
-    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-    CloseBtn.Position = UDim2.new(1, -35, 0, 2)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-    CloseBtn.Text = "X"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize = 14
-    CloseBtn.BorderSizePixel = 0
-    
-    local CloseCorner = Instance.new("UICorner", CloseBtn)
-    CloseCorner.CornerRadius = UDim.new(0, 4)
-    
-    CloseBtn.MouseButton1Click:Connect(function()
-        for _, conn in pairs(Connections) do
-            pcall(function() conn:Disconnect() end)
-        end
-        if controlConn then controlConn:Disconnect() end
-        ScreenGui:Destroy()
-    end)
-    
-    -- Tab sidebar
-    local TabContainer = Instance.new("Frame", Main)
-    TabContainer.Size = UDim2.new(0, 130, 1, -35)
-    TabContainer.Position = UDim2.new(0, 0, 0, 35)
-    TabContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    TabContainer.BorderSizePixel = 0
-    
-    -- Content area
-    local ContentArea = Instance.new("Frame", Main)
-    ContentArea.Size = UDim2.new(1, -130, 1, -35)
-    ContentArea.Position = UDim2.new(0, 130, 0, 35)
-    ContentArea.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-    ContentArea.BorderSizePixel = 0
-    
-    local tabs, currentTab = {}, nil
-    
-    local function createTab(name, icon)
-        local btn = Instance.new("TextButton", TabContainer)
-        btn.Size = UDim2.new(1, 0, 0, 35)
-        btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-        btn.Text = "  " .. icon .. "  " .. name
-        btn.TextColor3 = Color3.fromRGB(180, 180, 180)
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 13
-        btn.TextXAlignment = Enum.TextXAlignment.Left
-        btn.BorderSizePixel = 0
-        
-        local content = Instance.new("ScrollingFrame", ContentArea)
-        content.Size = UDim2.new(1, -20, 1, -20)
-        content.Position = UDim2.new(0, 10, 0, 10)
-        content.BackgroundTransparency = 1
-        content.BorderSizePixel = 0
-        content.ScrollBarThickness = 4
-        content.Visible = false
-        
-        local layout = Instance.new("UIListLayout", content)
-        layout.Padding = UDim.new(0, 8)
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            content.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
+        CloseBtn.MouseButton1Click:Connect(function()
+            for _, conn in pairs(Connections) do pcall(function() conn:Disconnect() end) end
+            if controlConn then controlConn:Disconnect() end
+            if earthquakeConn then earthquakeConn:Disconnect() end
+            for _, conn in pairs(rainbowConns) do pcall(function() conn:Disconnect() end) end
+            ScreenGui:Destroy()
         end)
-        
-        btn.MouseButton1Click:Connect(function()
-            if currentTab then currentTab.Visible = false end
-            content.Visible = true
-            currentTab = content
-            for _, t in ipairs(tabs) do t.btn.BackgroundColor3 = Color3.fromRGB(30, 30, 35) end
-            btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-        end)
-        
-        table.insert(tabs, {btn = btn, content = content})
-        return content
-    end
     
-    local function createButton(parent, name, callback)
-        local btn = Instance.new("TextButton", parent)
-        btn.Size = UDim2.new(1, 0, 0, 35)
-        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        btn.Text = "  " .. name
-        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 13
-        btn.TextXAlignment = Enum.TextXAlignment.Left
-        btn.BorderSizePixel = 0
+        -- Tab sidebar
+        local TabContainer = Instance.new("Frame", Main)
+        TabContainer.Size = UDim2.new(0, 115, 1, -32)
+        TabContainer.Position = UDim2.new(0, 0, 0, 32)
+        TabContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+        TabContainer.BorderSizePixel = 0
+    
+        -- Content area
+        local ContentArea = Instance.new("Frame", Main)
+        ContentArea.Size = UDim2.new(1, -115, 1, -32)
+        ContentArea.Position = UDim2.new(0, 115, 0, 32)
+        ContentArea.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+        ContentArea.BorderSizePixel = 0
+        ContentArea.ClipsDescendants = true
+    
+        local tabs, currentTab = {}, nil
+    
+        local function createTab(name, icon)
+            local btn = Instance.new("TextButton", TabContainer)
+            btn.Size = UDim2.new(1, 0, 0, 30)
+            btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+            btn.Text = "  " .. icon .. " " .. name
+            btn.TextColor3 = Color3.fromRGB(160, 160, 160)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 12
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.BorderSizePixel = 0
         
-        local corner = Instance.new("UICorner", btn)
-        corner.CornerRadius = UDim.new(0, 6)
+            local content = Instance.new("ScrollingFrame", ContentArea)
+            content.Size = UDim2.new(1, 0, 1, 0)
+            content.BackgroundTransparency = 1
+            content.BorderSizePixel = 0
+            content.ScrollBarThickness = 5
+            content.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 110)
+            content.CanvasSize = UDim2.new(0, 0, 0, 0)
+            content.Visible = false
+            content.ScrollingDirection = Enum.ScrollingDirection.Y
+            content.AutomaticCanvasSize = Enum.AutomaticSize.Y
         
-        btn.MouseButton1Click:Connect(function()
-            btn.BackgroundColor3 = Color3.fromRGB(0, 180, 90)
-            task.delay(0.2, function()
-                btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+            local layout = Instance.new("UIListLayout", content)
+            layout.Padding = UDim.new(0, 4)
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+        
+            layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                content.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
             end)
-            callback()
-        end)
         
-        return btn
-    end
+            btn.MouseButton1Click:Connect(function()
+                if currentTab then currentTab.Visible = false end
+                content.Visible = true
+                currentTab = content
+                for _, t in ipairs(tabs) do t.btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30) end
+                btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            end)
+        
+            table.insert(tabs, {btn = btn, content = content})
+            return content
+        end
     
-    local function createToggle(parent, name, callback)
-        local container = Instance.new("Frame", parent)
-        container.Size = UDim2.new(1, 0, 0, 30)
-        container.BackgroundTransparency = 1
+        local function createButton(parent, name, callback)
+            local btn = Instance.new("TextButton", parent)
+            btn.Size = UDim2.new(1, -10, 0, 28)
+            btn.Position = UDim2.new(0, 5, 0, 0)
+            btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+            btn.Text = "  " .. name
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 12
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
         
-        local label = Instance.new("TextLabel", container)
-        label.Size = UDim2.new(1, -50, 1, 0)
-        label.BackgroundTransparency = 1
-        label.Text = "  " .. name
-        label.TextColor3 = Color3.fromRGB(200, 200, 200)
-        label.Font = Enum.Font.Gotham
-        label.TextSize = 13
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local toggle = Instance.new("TextButton", container)
-        toggle.Size = UDim2.new(0, 40, 0, 20)
-        toggle.Position = UDim2.new(1, -45, 0.5, -10)
-        toggle.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-        toggle.Text = ""
-        toggle.BorderSizePixel = 0
-        
-        local corner = Instance.new("UICorner", toggle)
-        corner.CornerRadius = UDim.new(0, 10)
-        
-        Toggles[name:gsub("%s+", "")] = false
-        
-        toggle.MouseButton1Click:Connect(function()
-            Toggles[name:gsub("%s+", "")] = not Toggles[name:gsub("%s+", "")]
-            toggle.BackgroundColor3 = Toggles[name:gsub("%s+", "")]
-                and Color3.fromRGB(0, 200, 100)
-                or Color3.fromRGB(80, 80, 80)
-            if callback then callback(Toggles[name:gsub("%s+", "")]) end
-        end)
-    end
+            btn.MouseButton1Click:Connect(function()
+                btn.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
+                task.delay(0.15, function() btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55) end)
+                callback()
+            end)
+            return btn
+        end
     
-    local function createLabel(parent, text)
-        local lbl = Instance.new("TextLabel", parent)
-        lbl.Size = UDim2.new(1, 0, 0, 22)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = "  " .. text
-        lbl.TextColor3 = Color3.fromRGB(150, 150, 150)
-        lbl.Font = Enum.Font.Gotham
-        lbl.TextSize = 11
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        return lbl
-    end
+        local function createToggle(parent, name, callback)
+            local container = Instance.new("Frame", parent)
+            container.Size = UDim2.new(1, -10, 0, 24)
+            container.Position = UDim2.new(0, 5, 0, 0)
+            container.BackgroundTransparency = 1
+        
+            local label = Instance.new("TextLabel", container)
+            label.Size = UDim2.new(1, -45, 1, 0)
+            label.BackgroundTransparency = 1
+            label.Text = "  " .. name
+            label.TextColor3 = Color3.fromRGB(190, 190, 190)
+            label.Font = Enum.Font.Gotham
+            label.TextSize = 12
+            label.TextXAlignment = Enum.TextXAlignment.Left
+        
+            local toggle = Instance.new("TextButton", container)
+            toggle.Size = UDim2.new(0, 36, 0, 18)
+            toggle.Position = UDim2.new(1, -38, 0.5, -9)
+            toggle.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+            toggle.Text = ""
+            toggle.BorderSizePixel = 0
+            Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 9)
+        
+            Toggles[name:gsub("%s+", "")] = false
+        
+            toggle.MouseButton1Click:Connect(function()
+                Toggles[name:gsub("%s+", "")] = not Toggles[name:gsub("%s+", "")]
+                toggle.BackgroundColor3 = Toggles[name:gsub("%s+", "")]
+                    and Color3.fromRGB(0, 190, 90)
+                    or Color3.fromRGB(70, 70, 70)
+                if callback then callback(Toggles[name:gsub("%s+", "")]) end
+            end)
+        end
+    
+        local function createLabel(parent, text)
+            local lbl = Instance.new("TextLabel", parent)
+            lbl.Size = UDim2.new(1, -10, 0, 18)
+            lbl.Position = UDim2.new(0, 5, 0, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = text
+            lbl.TextColor3 = Color3.fromRGB(130, 130, 130)
+            lbl.Font = Enum.Font.Gotham
+            lbl.TextSize = 11
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            return lbl
+        end
     
     -- ===== BUILD TABS =====
     
