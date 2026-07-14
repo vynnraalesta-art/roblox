@@ -20,6 +20,7 @@ local Connections = {}
 local espObjects = {}
 local controlledPlayer = nil
 local controlConn = nil
+local selectedPlayer = nil -- Player selected from player list
 
 -- Dynamic camera (for respawn safety)
 local function getCamera()
@@ -52,8 +53,17 @@ local function getClosestPlayer(fov)
 end
 
 local function getTargetPlayer()
-    local target = getClosestPlayer(9999)
-    return target
+    -- Use selected player from list if available and still in game
+    if selectedPlayer then
+        local found = Players:FindFirstChild(selectedPlayer.Name)
+        if found then
+            return found
+        else
+            selectedPlayer = nil -- Player left
+        end
+    end
+    -- Fallback to closest player
+    return getClosestPlayer(9999)
 end
 
 -- ===== FEATURE: CLONE AVATAR =====
@@ -934,11 +944,123 @@ local function createWindow(title)
         end)
     
         -- Tab sidebar
-        local TabContainer = Instance.new("Frame", Main)
-        TabContainer.Size = UDim2.new(0, 115, 1, -32)
-        TabContainer.Position = UDim2.new(0, 0, 0, 32)
-        TabContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-        TabContainer.BorderSizePixel = 0
+            local TabContainer = Instance.new("Frame", Main)
+            TabContainer.Size = UDim2.new(0, 115, 1, -32)
+            TabContainer.Position = UDim2.new(0, 0, 0, 32)
+            TabContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+            TabContainer.BorderSizePixel = 0
+    
+            -- Tab buttons section
+            local TabButtons = Instance.new("Frame", TabContainer)
+            TabButtons.Size = UDim2.new(1, 0, 0, 150)
+            TabButtons.BackgroundTransparency = 1
+            TabButtons.BorderSizePixel = 0
+    
+            local tabBtnLayout = Instance.new("UIListLayout", TabButtons)
+            tabBtnLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+            -- Player list section
+            local PlayerListLabel = Instance.new("TextLabel", TabContainer)
+            PlayerListLabel.Size = UDim2.new(1, 0, 0, 18)
+            PlayerListLabel.Position = UDim2.new(0, 0, 0, 152)
+            PlayerListLabel.BackgroundTransparency = 1
+            PlayerListLabel.Text = "PLAYERS"
+            PlayerListLabel.TextColor3 = Color3.fromRGB(100, 100, 110)
+            PlayerListLabel.Font = Enum.Font.GothamBold
+            PlayerListLabel.TextSize = 10
+            PlayerListLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+            local PlayerList = Instance.new("ScrollingFrame", TabContainer)
+            PlayerList.Size = UDim2.new(1, 0, 1, -172)
+            PlayerList.Position = UDim2.new(0, 0, 0, 170)
+            PlayerList.BackgroundTransparency = 1
+            PlayerList.BorderSizePixel = 0
+            PlayerList.ScrollBarThickness = 4
+            PlayerList.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 90)
+            PlayerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+            PlayerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    
+            local playerListLayout = Instance.new("UIListLayout", PlayerList)
+            playerListLayout.Padding = UDim.new(0, 2)
+            playerListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+            -- Selected target indicator (in title bar)
+            local SelectedLabel = Instance.new("TextLabel", TitleBar)
+            SelectedLabel.Size = UDim2.new(0, 200, 0, 16)
+            SelectedLabel.Position = UDim2.new(1, -240, 0.5, -8)
+            SelectedLabel.BackgroundTransparency = 1
+            SelectedLabel.Text = "Target: Closest"
+            SelectedLabel.TextColor3 = Color3.fromRGB(0, 200, 100)
+            SelectedLabel.Font = Enum.Font.Gotham
+            SelectedLabel.TextSize = 11
+            SelectedLabel.TextXAlignment = Enum.TextXAlignment.Right
+    
+            local function refreshPlayerList()
+                -- Clear old entries
+                for _, child in ipairs(PlayerList:GetChildren()) do
+                    if child:IsA("TextButton") or child:IsA("Frame") then
+                        child:Destroy()
+                    end
+                end
+        
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player == LocalPlayer then continue end
+            
+                    local entry = Instance.new("TextButton", PlayerList)
+                    entry.Size = UDim2.new(1, -4, 0, 26)
+                    entry.Position = UDim2.new(0, 2, 0, 0)
+                    entry.BackgroundColor3 = (selectedPlayer == player) and Color3.fromRGB(0, 150, 60) or Color3.fromRGB(35, 35, 40)
+                    entry.Text = ""
+                    entry.BorderSizePixel = 0
+                    Instance.new("UICorner", entry).CornerRadius = UDim.new(0, 4)
+            
+                    -- Avatar thumbnail
+                    local avatar = Instance.new("ImageLabel", entry)
+                    avatar.Size = UDim2.new(0, 20, 0, 20)
+                    avatar.Position = UDim2.new(0, 3, 0.5, -10)
+                    avatar.BackgroundTransparency = 1
+                    avatar.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=48&height=48&format=png"
+                    Instance.new("UICorner", avatar).CornerRadius = UDim.new(0, 10)
+            
+                    -- Player name
+                    local nameLabel = Instance.new("TextLabel", entry)
+                    nameLabel.Size = UDim2.new(1, -28, 1, 0)
+                    nameLabel.Position = UDim2.new(0, 26, 0, 0)
+                    nameLabel.BackgroundTransparency = 1
+                    nameLabel.Text = player.Name
+                    nameLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+                    nameLabel.Font = Enum.Font.Gotham
+                    nameLabel.TextSize = 11
+                    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            
+                    entry.MouseButton1Click:Connect(function()
+                        selectedPlayer = player
+                        SelectedLabel.Text = "Target: " .. player.Name
+                        refreshPlayerList()
+                    end)
+            
+                    -- Right-click to deselect
+                    entry.MouseButton2Click:Connect(function()
+                        selectedPlayer = nil
+                        SelectedLabel.Text = "Target: Closest"
+                        refreshPlayerList()
+                    end)
+                end
+            end
+    
+            -- Watch for players joining/leaving
+            Players.PlayerAdded:Connect(function(p) refreshPlayerList() end)
+            Players.PlayerRemoving:Connect(function(p)
+                if selectedPlayer == p then
+                    selectedPlayer = nil
+                    SelectedLabel.Text = "Target: Closest"
+                end
+                refreshPlayerList()
+            end)
+    
+            -- Initial population
+            refreshPlayerList()
     
         -- Content area
         local ContentArea = Instance.new("Frame", Main)
@@ -951,7 +1073,7 @@ local function createWindow(title)
         local tabs, currentTab = {}, nil
     
         local function createTab(name, icon)
-            local btn = Instance.new("TextButton", TabContainer)
+            local btn = Instance.new("TextButton", TabButtons)
             btn.Size = UDim2.new(1, 0, 0, 30)
             btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
             btn.Text = "  " .. icon .. " " .. name
@@ -965,10 +1087,9 @@ local function createWindow(title)
             content.Size = UDim2.new(1, 0, 1, 0)
             content.BackgroundTransparency = 1
             content.BorderSizePixel = 0
-            content.ScrollBarThickness = 5
-            content.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 110)
+            content.ScrollBarThickness = 6
+            content.ScrollBarImageColor3 = Color3.fromRGB(120, 120, 140)
             content.CanvasSize = UDim2.new(0, 0, 0, 0)
-            content.Visible = false
             content.ScrollingDirection = Enum.ScrollingDirection.Y
             content.AutomaticCanvasSize = Enum.AutomaticSize.Y
         
@@ -976,13 +1097,9 @@ local function createWindow(title)
             layout.Padding = UDim.new(0, 4)
             layout.SortOrder = Enum.SortOrder.LayoutOrder
         
-            layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                content.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
-            end)
-        
             btn.MouseButton1Click:Connect(function()
-                if currentTab then currentTab.Visible = false end
-                content.Visible = true
+                if currentTab then currentTab.Parent = nil end
+                content.Parent = ContentArea
                 currentTab = content
                 for _, t in ipairs(tabs) do t.btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30) end
                 btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
@@ -994,8 +1111,7 @@ local function createWindow(title)
     
         local function createButton(parent, name, callback)
             local btn = Instance.new("TextButton", parent)
-            btn.Size = UDim2.new(1, -10, 0, 28)
-            btn.Position = UDim2.new(0, 5, 0, 0)
+            btn.Size = UDim2.new(1, -12, 0, 26)
             btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
             btn.Text = "  " .. name
             btn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1015,12 +1131,11 @@ local function createWindow(title)
     
         local function createToggle(parent, name, callback)
             local container = Instance.new("Frame", parent)
-            container.Size = UDim2.new(1, -10, 0, 24)
-            container.Position = UDim2.new(0, 5, 0, 0)
+            container.Size = UDim2.new(1, -12, 0, 22)
             container.BackgroundTransparency = 1
         
             local label = Instance.new("TextLabel", container)
-            label.Size = UDim2.new(1, -45, 1, 0)
+            label.Size = UDim2.new(1, -42, 1, 0)
             label.BackgroundTransparency = 1
             label.Text = "  " .. name
             label.TextColor3 = Color3.fromRGB(190, 190, 190)
@@ -1029,12 +1144,12 @@ local function createWindow(title)
             label.TextXAlignment = Enum.TextXAlignment.Left
         
             local toggle = Instance.new("TextButton", container)
-            toggle.Size = UDim2.new(0, 36, 0, 18)
-            toggle.Position = UDim2.new(1, -38, 0.5, -9)
+            toggle.Size = UDim2.new(0, 34, 0, 16)
+            toggle.Position = UDim2.new(1, -36, 0.5, -8)
             toggle.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
             toggle.Text = ""
             toggle.BorderSizePixel = 0
-            Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 9)
+            Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 8)
         
             Toggles[name:gsub("%s+", "")] = false
         
@@ -1049,8 +1164,7 @@ local function createWindow(title)
     
         local function createLabel(parent, text)
             local lbl = Instance.new("TextLabel", parent)
-            lbl.Size = UDim2.new(1, -10, 0, 18)
-            lbl.Position = UDim2.new(0, 5, 0, 0)
+            lbl.Size = UDim2.new(1, -12, 0, 16)
             lbl.BackgroundTransparency = 1
             lbl.Text = text
             lbl.TextColor3 = Color3.fromRGB(130, 130, 130)
@@ -1116,8 +1230,8 @@ local function createWindow(title)
     
     -- Activate first tab
     if tabs[1] then
-        tabs[1].content.Visible = true
-        tabs[1].btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+        tabs[1].content.Parent = ContentArea
+        tabs[1].btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
         currentTab = tabs[1].content
     end
     
